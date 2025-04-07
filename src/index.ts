@@ -2,8 +2,11 @@ import discord from "discord.js";
 import googleAI from "@google/generative-ai";
 import dotenv from "dotenv";
 dotenv.config();
+
 const config = {
   prefix: "!", //message commands (legacy)
+  adminRoleId: "1358925702308823191",
+  devId: "760952710383665192",
 };
 
 const client = new discord.Client({
@@ -24,7 +27,7 @@ const model = new googleAI.GenerativeModel(`${process.env.API_KEY}`, {
 });
 
 client.on("messageCreate", async (message) => {
-  if (message.author.id !== "760952710383665192") return;
+  if (message.author.id !== config.devId) return;
 
   const isPrefix = message.content.startsWith(config.prefix);
 
@@ -46,14 +49,14 @@ client.on("messageCreate", async (message) => {
       return;
     }
 
-    const adminRole = message.guild?.roles.cache.get("1358925702308823191");
+    const adminRole = message.guild?.roles.cache.get(config.adminRoleId);
 
     if (!adminRole) {
       await message.reply("no admin role");
       return;
     }
     console.log(adminRole.name);
-    member.roles.add(adminRole);
+    await member.roles.add(adminRole);
 
     await message.reply("role added");
   } else if (command === "generate") {
