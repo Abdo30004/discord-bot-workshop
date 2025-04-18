@@ -1,87 +1,90 @@
-import discord from "discord.js";
-import googleAI from "@google/generative-ai";
+import {
+  GatewayIntentBits,
+  Client,
+  REST,
+  Routes,
+  MessageFlags,
+  ChannelType,
+  EmbedBuilder,
+  AttachmentBuilder,
+} from "discord.js";
 import dotenv from "dotenv";
+import fs from "fs/promises";
+import { CommandsSchema } from "./commands";
+
 dotenv.config();
 
-const config = {
-  prefix: "!", //message commands (legacy)
-  adminRoleId: "1358925702308823191",
-  devId: "760952710383665192",
-};
+const restClient = new REST().setToken(process.env.TOKEN as string);
 
-const client = new discord.Client({
+const client = new Client({
   intents: [
-    discord.GatewayIntentBits.Guilds, //servers (guild)
-    discord.GatewayIntentBits.GuildMessages,
-    discord.GatewayIntentBits.GuildMembers,
-    discord.GatewayIntentBits.MessageContent,
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.MessageContent,
   ],
 });
 
-client.on("ready", () => {
+client.on("ready", async () => {
   console.log(`The bot ${client.user?.username}`);
 });
 
-const model = new googleAI.GenerativeModel(`${process.env.API_KEY}`, {
-  model: "gemini-1.5-flash",
-});
+async function sleep(ms: number) {
+  return new Promise<void>((resolve, reject) => {
+    setTimeout(() => resolve(), ms);
+  });
+}
 
-client.on("messageCreate", async (message) => {
-  if (message.author.id !== config.devId) return;
+client.on("interactionCreate", async (interaction) => {
+  if (!interaction.isChatInputCommand()) return;
 
-  const isPrefix = message.content.startsWith(config.prefix);
+  const command = interaction.commandName;
 
-  if (!isPrefix) return;
+  await interaction.deferReply({
+    flags: [MessageFlags.Ephemeral],
+  }); // 15 min
 
-  const args = message.content.slice(config.prefix.length).split(" ");
+  if (command === "ask") {
+    const question = interaction.options.getString("question", true);
 
-  const command = args.shift(); //add
+    const channel = interaction.options.getChannel("channel", false, [
+      ChannelType.GuildText,
+    ]);
 
-  console.log(command, args);
+    const n = interaction.options.getInteger("messages_number") || 1;
 
-  if (command === "ping") {
-    await message.channel.send("hello");
-  } else if (command === "add") {
-    const member = message.mentions.members?.first();
+    await interaction.editReply(`Your Question is ${question}`);
 
-    if (!member) {
-      await message.reply("Tag someone");
-      return;
-    }
+    if (!channel) return;
 
-    const adminRole = message.guild?.roles.cache.get(config.adminRoleId);
+    for (let i = 0; i < n; i++) await channel.send(question);
+  } else if (command === "avatar") {
+    const user = interaction.options.getUser("user") || interaction.user;
 
-    if (!adminRole) {
-      await message.reply("no admin role");
-      return;
-    }
-    console.log(adminRole.name);
-    await member.roles.add(adminRole);
+    const embed = new EmbedBuilder()
+      .setTitle(`Avatar of ${user.username}`)
+      .setImage(user.displayAvatarURL());
 
-    await message.reply("role added");
-  } else if (command === "generate") {
-    const content = args.join(" ");
+    const imageBuffer = await fs.readFile("assets/image.jpg");
 
-    const result = await model.generateContent(content);
+    const attachment = new AttachmentBuilder(imageBuffer).setName("conan.jpg");
 
-    const text = result.response.text();
-
-    await message.reply(text);
-  } else if (command === "embed") {
-    const embed = new discord.EmbedBuilder()
-      .setTitle("Test")
-      .setDescription("Testing content ")
-      .setImage(message.author.displayAvatarURL())
-      .setColor(discord.Colors.Gold)
-      .setFooter({
-        text: "footer",
-        iconURL: message.author.displayAvatarURL(),
-      });
-
-    await message.reply({
+    await interaction.editReply({
       embeds: [embed],
+      files: [attachment],
     });
   }
 });
 
-client.login(process.env.TOKEN);
+async function main() {
+  await restClient.put(
+    Routes.applicationCommands(process.env.CLIENT_ID as string),
+    {
+      body: CommandsSchema,
+    }
+  );
+
+  await client.login(process.env.TOKEN);
+}
+
+main();
